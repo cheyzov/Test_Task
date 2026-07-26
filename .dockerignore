@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+**/.vs/
+**/TestResults/
+*.user
+*.db
+*.log
+.git/
+.gitignore
+README (1).md

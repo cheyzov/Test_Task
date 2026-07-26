@@ -59,8 +59,9 @@ public sealed class TestTaskDbContext(DbContextOptions<TestTaskDbContext> option
             entity.Property(x => x.ProviderPaymentId).HasMaxLength(200).IsRequired();
             entity.Property(x => x.OperationId).HasMaxLength(200).IsRequired();
             entity.Property(x => x.Result).HasMaxLength(20).IsRequired();
+            entity.Property(x => x.Ignored).IsRequired();
             entity.Property(x => x.Message).HasMaxLength(1000);
-            entity.HasIndex(x => x.ProviderPaymentId).IsUnique();
+            entity.HasIndex(x => new { x.ProviderPaymentId, x.Result }).IsUnique();
             entity.HasOne(x => x.Operation)
                 .WithMany(x => x.Receipts)
                 .HasForeignKey(x => x.OperationId)

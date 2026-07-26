@@ -10,6 +10,8 @@ public sealed class ProviderReceipt
 
     public required string Result { get; set; }
 
+    public bool Ignored { get; set; }
+
     public string? Message { get; set; }
 
     public DateTime OccurredAt { get; set; }

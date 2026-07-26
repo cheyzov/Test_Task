@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Test_Task.Models;
 
@@ -11,9 +12,11 @@ using Test_Task.Models;
 namespace Test_Task.Migrations
 {
     [DbContext(typeof(TestTaskDbContext))]
-    partial class TestTaskDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260725211709_TrackIgnoredReceipts")]
+    partial class TrackIgnoredReceipts
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

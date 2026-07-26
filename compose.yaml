@@ -1,0 +1,45 @@
+services:
+  candidate-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Server=mssql;Database=Test_Task;User Id=sa;Password=Test_Task_123!Mssql;TrustServerCertificate=True;"
+      PROVIDER_URL: http://provider-simulator:8081
+    ports:
+      - "8080:8080"
+    depends_on:
+      mssql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  provider-simulator:
+    image: ghcr.io/fintech-dev-lab/internship-provider-simulator:v0.2.0
+    environment:
+      CALLBACK_URL: http://candidate-service:8080/receipts
+    ports:
+      - "8081:8081"
+    depends_on:
+      - candidate-service
+    restart: unless-stopped
+
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      SA_PASSWORD: "Test_Task_123!Mssql"
+    ports:
+      - "1433:1433"
+    volumes:
+      - mssql-data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/1433'"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+volumes:
+  mssql-data:

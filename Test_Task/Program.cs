@@ -30,7 +30,12 @@ builder.Services.AddCors(options =>
         policy.AllowAnyHeader().AllowAnyMethod();
     });
 });
-builder.Services.AddHttpClient("provider");
+builder.Services.AddHttpClient("provider", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
+builder.Services.AddScoped<OperationService>();
+builder.Services.AddScoped<ReceiptService>();
 builder.Services.AddHostedService<DispatchJobWorker>();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();

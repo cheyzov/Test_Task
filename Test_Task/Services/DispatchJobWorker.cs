@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Net;
 using Microsoft.EntityFrameworkCore;
 using Test_Task.Models;
 
@@ -15,7 +16,7 @@ public sealed class DispatchJobWorker(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        logger.LogInformation("Dispatch job worker started");
+        logger.LogInformation("Фоновый обработчик заданий отправки запущен");
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -33,12 +34,12 @@ public sealed class DispatchJobWorker(
             }
             catch (Exception exception)
             {
-                logger.LogError(exception, "Unexpected error while processing dispatch jobs");
+                logger.LogError(exception, "Непредвиденная ошибка при обработке заданий отправки");
                 await Task.Delay(PollInterval, stoppingToken);
             }
         }
 
-        logger.LogInformation("Dispatch job worker stopped");
+        logger.LogInformation("Фоновый обработчик заданий отправки остановлен");
     }
 
     private async Task<bool> ProcessNextJob(CancellationToken cancellationToken)
@@ -52,6 +53,7 @@ public sealed class DispatchJobWorker(
             var job = await db.PaymentDispatches
                 .Include(x => x.Operation)
                 .Where(x => x.Operation.Status == OperationStatus.PROCESSING &&
+                            x.Operation.ProviderPaymentId == null &&
                             (x.NextAttemptAt == null || x.NextAttemptAt <= now))
                 .OrderBy(x => x.CreatedAt)
                 .FirstOrDefaultAsync(cancellationToken);
@@ -78,7 +80,7 @@ public sealed class DispatchJobWorker(
             var providerUrl = configuration["PROVIDER_URL"] ?? configuration["Provider:Url"];
             if (string.IsNullOrWhiteSpace(providerUrl))
             {
-                throw new InvalidOperationException("Provider URL is not configured.");
+                throw new InvalidOperationException("Адрес провайдера не настроен.");
             }
 
             var endpoint = new Uri($"{providerUrl.TrimEnd('/')}/payments");
@@ -93,20 +95,25 @@ public sealed class DispatchJobWorker(
             using var response = await client.SendAsync(request, cancellationToken);
             var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
-            if (response.IsSuccessStatusCode)
+            if (response.StatusCode == HttpStatusCode.Accepted)
             {
                 var providerPaymentId = ReadProviderPaymentId(responseBody);
+                if (string.IsNullOrWhiteSpace(providerPaymentId))
+                {
+                    throw new InvalidOperationException("Провайдер вернул ответ 202 без providerPaymentId.");
+                }
+
                 await MarkSucceeded(attempt.OperationId, providerPaymentId, cancellationToken);
                 logger.LogInformation(
-                    "Provider accepted operation {OperationId} on attempt {Attempt}",
+                    "Провайдер принял операцию {OperationId} с попытки {Attempt}",
                     attempt.OperationId,
                     attempt.AttemptCount);
             }
             else
             {
-                await MarkFailed(attempt.OperationId, $"Provider returned {(int)response.StatusCode}: {responseBody}", cancellationToken);
+                await MarkFailed(attempt.OperationId, $"Провайдер вернул код {(int)response.StatusCode}: {responseBody}", cancellationToken);
                 logger.LogWarning(
-                    "Provider rejected operation {OperationId} on attempt {Attempt} with status {StatusCode}",
+                    "Провайдер отклонил операцию {OperationId} с попытки {Attempt}, код ответа {StatusCode}",
                     attempt.OperationId,
                     attempt.AttemptCount,
                     (int)response.StatusCode);
@@ -119,13 +126,13 @@ public sealed class DispatchJobWorker(
         catch (Exception exception)
         {
             await MarkFailed(attempt.OperationId, exception.Message, cancellationToken);
-            logger.LogWarning(exception, "Provider request failed for operation {OperationId}", attempt.OperationId);
+            logger.LogWarning(exception, "Ошибка запроса к провайдеру для операции {OperationId}", attempt.OperationId);
         }
 
         return true;
     }
 
-    private async Task MarkSucceeded(string operationId, string? providerPaymentId, CancellationToken cancellationToken)
+    private async Task MarkSucceeded(string operationId, string providerPaymentId, CancellationToken cancellationToken)
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TestTaskDbContext>();
@@ -133,12 +140,9 @@ public sealed class DispatchJobWorker(
         job.NextAttemptAt = null;
         job.LastError = null;
 
-        if (providerPaymentId is not null)
-        {
-            var operation = await db.Operations.SingleAsync(x => x.OperationId == operationId, cancellationToken);
-            operation.ProviderPaymentId ??= providerPaymentId;
-            operation.UpdatedAt = DateTime.UtcNow;
-        }
+        var operation = await db.Operations.SingleAsync(x => x.OperationId == operationId, cancellationToken);
+        operation.ProviderPaymentId ??= providerPaymentId;
+        operation.UpdatedAt = DateTime.UtcNow;
 
         await db.SaveChangesAsync(cancellationToken);
     }
